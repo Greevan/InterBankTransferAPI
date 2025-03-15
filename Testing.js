@@ -1,7 +1,7 @@
 const BankTransferAPI = require("./api/BankTransferAPI");
 const receiverApiList = require("./api/ReceiverAPIs");
 
-const senderApi = "https://firestore.googleapis.com/v1/projects/yes-bank-international/databases/(default)/documents";
+const senderApi = "https://firestore.googleapis.com/v1/projects/psnova-49857/databases/(default)/documents";
 
 
 async function initializeAndTest() {
@@ -14,13 +14,12 @@ async function initializeAndTest() {
 
     console.log("✅ Receiver APIs loaded:", receiverApiList);
 
-    // const senderApi = "https://firestore.googleapis.com/v1/projects/interbankmanagement/databases/(default)/documents";
     const bankTransfer = new BankTransferAPI(senderApi, receiverApiList);
 
     await bankTransfer.fetchIFSCs();
 
-    const senderAccount = "10001234";  // Ensure this exists in interbankmanagement lite_profile
-    const senderIfsc = "YBI01";
+    const senderAccount = "100013";  // Ensure this exists in interbankmanagement lite_profile
+    const senderIfsc = "PNV13";
     const receiverAccount = "10002972313"
     const amountToTransfer = 500;
 

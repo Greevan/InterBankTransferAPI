@@ -1,4 +1,4 @@
-//api/BankTransferAPI.js
+// api/BankTransferAPI.js
 const axios = require("axios");
 
 class BankTransferAPI {
@@ -6,6 +6,7 @@ class BankTransferAPI {
         this.senderApi = senderApi;              // Dedicated sender API (used for updates only)
         this.receiverApiBaseUrls = receiverApiBaseUrls; // Receiver APIs (used for fetching IFSC and updates)
         this.ifscCache = new Map();
+        this.apiByIfsc = new Map(); // New map to store IFSC-to-API mapping
     }
 
     async fetchIFSCs() {
@@ -20,10 +21,13 @@ class BankTransferAPI {
                     const acctNumber = doc.fields?.acct_number?.stringValue || 
                                      (doc.fields?.acct_number?.integerValue?.toString());
                     if (acctNumber) {
+                        const ifscCode = doc.fields?.ifsc_code?.stringValue || 'unknown';
                         this.ifscCache.set(acctNumber, {
-                            ifscCode: doc.fields?.ifsc_code?.stringValue || 'unknown',
+                            ifscCode: ifscCode,
                             name: doc.fields?.name?.stringValue || 'unknown'
                         });
+                        // Map IFSC to the API it came from
+                        this.apiByIfsc.set(ifscCode, baseUrl);
                     } else {
                         console.warn(`⚠️ Skipping document from ${baseUrl} due to missing acct_number:`, doc);
                     }
@@ -36,6 +40,7 @@ class BankTransferAPI {
     
         await Promise.all(fetchPromises);
         console.log("✅ IFSC cache populated:", this.ifscCache);
+        console.log("✅ API by IFSC mapping:", this.apiByIfsc);
     }
 
     async fetchDocument(url) {
@@ -64,21 +69,35 @@ class BankTransferAPI {
         console.log(`💰 Updating bank account balance for Account: ${acct_number}, Amount: ${amount}`);
         try {
             // Choose API based on sender or receiver
-            const url = isSender 
-                ? `${this.senderApi}/bank_account` 
-                : `${this.receiverApiBaseUrls[0]}/bank_account`;
+            let url;
+            if (isSender) {
+                url = `${this.senderApi}/bank_account`;
+            } else {
+                const profile = this.ifscCache.get(acct_number);
+                if (!profile) {
+                    console.error(`❌ No profile found in cache for Account: ${acct_number}`);
+                    return false;
+                }
+                const apiBaseUrl = this.apiByIfsc.get(profile.ifscCode);
+                if (!apiBaseUrl) {
+                    console.error(`❌ No API mapped for IFSC: ${profile.ifscCode}`);
+                    return false;
+                }
+                url = `${apiBaseUrl}/bank_account`;
+            }
     
             // Fetch all bank accounts from Firestore
             const accounts = await this.fetchDocument(url);
     
             // Find the correct document by matching acct_number
             const account = accounts.find(doc => {
-                const docAcctNumber = doc.fields.acct_number?.integerValue?.toString();
+                const docAcctNumber = doc.fields.acct_number?.integerValue?.toString() || 
+                                     doc.fields.acct_number?.stringValue;
                 return docAcctNumber === acct_number;
             });
     
             if (!account) {
-                console.error(`❌ Bank account not found for Account: ${acct_number}`);
+                console.error(`❌ Bank account not found for Account: ${acct_number} in ${url}`);
                 return false;
             }
     
@@ -107,7 +126,6 @@ class BankTransferAPI {
             return false;
         }
     }
-    
 
     async createTransaction(senderAcct, receiverAcct, amount) {
         console.log(`📜 Recording transaction: ₹${amount} from ${senderAcct} to ${receiverAcct}`);
