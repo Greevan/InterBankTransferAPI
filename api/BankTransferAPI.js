@@ -3,10 +3,10 @@ const axios = require("axios");
 
 class BankTransferAPI {
     constructor(senderApi, receiverApiBaseUrls) {
-        this.senderApi = senderApi;              // Dedicated sender API (used for updates only)
-        this.receiverApiBaseUrls = receiverApiBaseUrls; // Receiver APIs (used for fetching IFSC and updates)
+        this.senderApi = senderApi;
+        this.receiverApiBaseUrls = receiverApiBaseUrls;
         this.ifscCache = new Map();
-        this.apiByIfsc = new Map(); // New map to store IFSC-to-API mapping
+        this.apiByIfsc = new Map();
     }
 
     async fetchIFSCs() {
@@ -19,14 +19,13 @@ class BankTransferAPI {
                 
                 documents.forEach(doc => {
                     const acctNumber = doc.fields?.acct_number?.stringValue || 
-                                     (doc.fields?.acct_number?.integerValue?.toString());
+                                    (doc.fields?.acct_number?.integerValue?.toString());
                     if (acctNumber) {
                         const ifscCode = doc.fields?.ifsc_code?.stringValue || 'unknown';
                         this.ifscCache.set(acctNumber, {
                             ifscCode: ifscCode,
                             name: doc.fields?.name?.stringValue || 'unknown'
                         });
-                        // Map IFSC to the API it came from
                         this.apiByIfsc.set(ifscCode, baseUrl);
                     } else {
                         console.warn(`⚠️ Skipping document from ${baseUrl} due to missing acct_number:`, doc);
@@ -54,21 +53,48 @@ class BankTransferAPI {
         }
     }
 
-    async validateLiteProfile(ifsc, acct_number) {
-        console.log(`🔍 Validating IFSC and Account Number: ${acct_number}, IFSC: ${ifsc}`);
-        const profile = this.ifscCache.get(acct_number);
-        if (!profile || profile.ifscCode !== ifsc) {
-            console.error("❌ Invalid IFSC Code or Account Number!");
+    async validateBankAccount(acct_number, isSender = true) {
+        console.log(`🔍 Validating bank account: ${acct_number}`);
+        try {
+            let url = isSender ? `${this.senderApi}/bank_account` : null;
+            
+            if (!isSender) {
+                const profile = this.ifscCache.get(acct_number);
+                if (!profile) {
+                    console.error(`❌ No profile found in cache for Account: ${acct_number}`);
+                    return false;
+                }
+                const apiBaseUrl = this.apiByIfsc.get(profile.ifscCode);
+                if (!apiBaseUrl) {
+                    console.error(`❌ No API mapped for IFSC: ${profile.ifscCode}`);
+                    return false;
+                }
+                url = `${apiBaseUrl}/bank_account`;
+            }
+
+            const accounts = await this.fetchDocument(url);
+            const account = accounts.find(doc => {
+                const docAcctNumber = doc.fields.acct_number?.stringValue || 
+                                   doc.fields.acct_number?.integerValue?.toString();
+                return docAcctNumber === acct_number;
+            });
+
+            if (!account) {
+                console.error(`❌ Account ${acct_number} not found in bank_account collection`);
+                return false;
+            }
+
+            console.log(`✅ Bank account validated for: ${acct_number}`);
+            return true;
+        } catch (error) {
+            console.error(`❌ Error validating bank account ${acct_number}:`, error.message);
             return false;
         }
-        console.log(`✅ Lite profile validated for: ${profile.name} (Account: ${acct_number})`);
-        return true;
     }
 
     async updateBankAccount(acct_number, amount, isSender = true) {
         console.log(`💰 Updating bank account balance for Account: ${acct_number}, Amount: ${amount}`);
         try {
-            // Choose API based on sender or receiver
             let url;
             if (isSender) {
                 url = `${this.senderApi}/bank_account`;
@@ -86,13 +112,10 @@ class BankTransferAPI {
                 url = `${apiBaseUrl}/bank_account`;
             }
     
-            // Fetch all bank accounts from Firestore
             const accounts = await this.fetchDocument(url);
-    
-            // Find the correct document by matching acct_number
             const account = accounts.find(doc => {
                 const docAcctNumber = doc.fields.acct_number?.integerValue?.toString() || 
-                                     doc.fields.acct_number?.stringValue;
+                                   doc.fields.acct_number?.stringValue;
                 return docAcctNumber === acct_number;
             });
     
@@ -101,24 +124,26 @@ class BankTransferAPI {
                 return false;
             }
     
-            // Extract Firestore Document ID from "name"
             const docId = account.name.split("/").pop();
             const updateUrl = `${url}/${docId}`;
-    
-            // Get current balance
-            const currentBalance = parseInt(account.fields.acct_balance.integerValue);
+            const currentBalance = parseInt(account.fields.acct_bal.integerValue);
             const newBalance = currentBalance + amount;
     
             console.log(`💳 Updating balance for ${acct_number}: New Balance ₹${newBalance}`);
     
-            // Firestore update payload
+            // Updated payload to only patch the specific field
             const payload = {
                 fields: {
-                    acct_balance: { integerValue: newBalance.toString() }
+                    acct_bal: { integerValue: newBalance.toString() }
                 }
             };
     
-            await axios.patch(updateUrl, payload);
+            // Use updateMask to specify only the field to update
+            await axios.patch(updateUrl, payload, {
+                params: {
+                    'updateMask.fieldPaths': 'acct_bal'
+                }
+            });
             console.log(`✅ Account ${acct_number} successfully updated.`);
             return true;
         } catch (error) {
@@ -156,9 +181,21 @@ class BankTransferAPI {
         console.log(`📩 Sender: ${senderAcct} (IFSC: ${senderIfsc})`);
         console.log(`📤 Receiver: ${receiverAcct} (Amount: ₹${amount})`);
 
-        const valid = await this.validateLiteProfile(senderIfsc, senderAcct);
-        if (!valid) {
-            console.log("❌ Transfer aborted due to validation failure.");
+        const senderValid = await this.validateBankAccount(senderAcct, true);
+        if (!senderValid) {
+            console.log("❌ Transfer aborted: Sender account not found in bank_account.");
+            return;
+        }
+
+        const senderProfile = this.ifscCache.get(senderAcct);
+        if (!senderProfile || senderProfile.ifscCode !== senderIfsc) {
+            console.log("❌ Transfer aborted: Sender IFSC validation failed in lite_profile.");
+            return;
+        }
+
+        const receiverValid = await this.validateBankAccount(receiverAcct, false);
+        if (!receiverValid) {
+            console.log("❌ Transfer aborted: Receiver account not found in bank_account.");
             return;
         }
 
@@ -170,7 +207,6 @@ class BankTransferAPI {
 
         const receiverUpdated = await this.updateBankAccount(receiverAcct, amount, false);
         if (!receiverUpdated) {
-            // Rollback sender's deduction
             await this.updateBankAccount(senderAcct, amount, true);
             console.log("❌ Transfer aborted: Unable to update receiver's balance. Rolled back sender's balance.");
             return;

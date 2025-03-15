@@ -1,7 +1,7 @@
 const BankTransferAPI = require("./api/BankTransferAPI");
 const receiverApiList = require("./api/ReceiverAPIs");
 
-const senderApi = "https://firestore.googleapis.com/v1/projects/psnova-49857/databases/(default)/documents";
+const senderApi = "https://firestore.googleapis.com/v1/projects/interbankmanagement/databases/(default)/documents";
 
 
 async function initializeAndTest() {
@@ -18,9 +18,9 @@ async function initializeAndTest() {
 
     await bankTransfer.fetchIFSCs();
 
-    const senderAccount = "100013";  // Ensure this exists in interbankmanagement lite_profile
-    const senderIfsc = "PNV13";
-    const receiverAccount = "10002972313"
+    const senderAccount = "10002972313";  // Ensure this exists in interbankmanagement lite_profile
+    const senderIfsc = "PNB001";
+    const receiverAccount = "20001213"
     const amountToTransfer = 500;
 
     await bankTransfer.transferMoney(senderAccount, senderIfsc, receiverAccount, amountToTransfer);
