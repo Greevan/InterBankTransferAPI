@@ -20,7 +20,7 @@ async function initializeAndTest() {
 
     const senderAccount = "10002972313";  // Ensure this exists in interbankmanagement lite_profile
     const senderIfsc = "PNB001";
-    const receiverAccount = "20001213"
+    const receiverAccount = "50002972313"
     const amountToTransfer = 500;
 
     await bankTransfer.transferMoney(senderAccount, senderIfsc, receiverAccount, amountToTransfer);
