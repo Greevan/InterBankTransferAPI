@@ -180,7 +180,3 @@ Feel free to fork, modify, and submit pull requests. Ensure changes maintain the
 ## License
 
 This project is unlicensed and free to use/modify as needed for your purposes.
-
----
-
-This updated README reflects the addition of `receiverIfsc` validation, includes clear usage examples, and aligns with the latest `BankTransferAPI` implementation. Let me know if you'd like to tweak any section further!
