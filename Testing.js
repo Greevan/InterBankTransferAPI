@@ -3,7 +3,6 @@ const receiverApiList = require("./api/ReceiverAPIs");
 
 const senderApi = "https://firestore.googleapis.com/v1/projects/interbankmanagement/databases/(default)/documents";
 
-
 async function initializeAndTest() {
     console.log("🔵 Initializing bank transfer test...");
 
@@ -20,12 +19,13 @@ async function initializeAndTest() {
 
     const senderAccount = "10002972313";  // Ensure this exists in interbankmanagement lite_profile
     const senderIfsc = "PNB001";
-    const receiverAccount = "50002972313"
+    const receiverAccount = "50002972313"; // Ensure this exists in a receiver's lite_profile
+    const receiverIfsc = "PNB001";       // Add receiver IFSC for validation
     const amountToTransfer = 500;
 
-    await bankTransfer.transferMoney(senderAccount, senderIfsc, receiverAccount, amountToTransfer);
+    await bankTransfer.transferMoney(senderAccount, senderIfsc, receiverAccount, receiverIfsc, amountToTransfer);
 
-    console.log("\n✅ Test completed!");
+    console.log("\n✅ Test completed!")
 }
 
 initializeAndTest().catch(error => {

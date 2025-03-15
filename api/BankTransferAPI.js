@@ -1,4 +1,3 @@
-// api/BankTransferAPI.js
 const axios = require("axios");
 
 class BankTransferAPI {
@@ -131,14 +130,12 @@ class BankTransferAPI {
     
             console.log(`💳 Updating balance for ${acct_number}: New Balance ₹${newBalance}`);
     
-            // Updated payload to only patch the specific field
             const payload = {
                 fields: {
                     acct_bal: { integerValue: newBalance.toString() }
                 }
             };
     
-            // Use updateMask to specify only the field to update
             await axios.patch(updateUrl, payload, {
                 params: {
                     'updateMask.fieldPaths': 'acct_bal'
@@ -176,37 +173,50 @@ class BankTransferAPI {
         await Promise.all(fetchPromises);
     }
 
-    async transferMoney(senderAcct, senderIfsc, receiverAcct, amount) {
+    async transferMoney(senderAcct, senderIfsc, receiverAcct, receiverIfsc, amount) {
         console.log("\n🚀 Starting money transfer...");
         console.log(`📩 Sender: ${senderAcct} (IFSC: ${senderIfsc})`);
-        console.log(`📤 Receiver: ${receiverAcct} (Amount: ₹${amount})`);
+        console.log(`📤 Receiver: ${receiverAcct} (IFSC: ${receiverIfsc}, Amount: ₹${amount})`);
 
+        // Validate sender account in bank_account
         const senderValid = await this.validateBankAccount(senderAcct, true);
         if (!senderValid) {
             console.log("❌ Transfer aborted: Sender account not found in bank_account.");
             return;
         }
 
+        // Verify sender IFSC from lite_profile
         const senderProfile = this.ifscCache.get(senderAcct);
         if (!senderProfile || senderProfile.ifscCode !== senderIfsc) {
             console.log("❌ Transfer aborted: Sender IFSC validation failed in lite_profile.");
             return;
         }
 
+        // Validate receiver account in bank_account
         const receiverValid = await this.validateBankAccount(receiverAcct, false);
         if (!receiverValid) {
             console.log("❌ Transfer aborted: Receiver account not found in bank_account.");
             return;
         }
 
+        // Verify receiver IFSC from lite_profile
+        const receiverProfile = this.ifscCache.get(receiverAcct);
+        if (!receiverProfile || receiverProfile.ifscCode !== receiverIfsc) {
+            console.log("❌ Transfer aborted: Receiver IFSC validation failed in lite_profile.");
+            return;
+        }
+
+        // Update sender balance
         const senderUpdated = await this.updateBankAccount(senderAcct, -amount, true);
         if (!senderUpdated) {
             console.log("❌ Transfer aborted: Unable to deduct sender's balance.");
             return;
         }
 
+        // Update receiver balance
         const receiverUpdated = await this.updateBankAccount(receiverAcct, amount, false);
         if (!receiverUpdated) {
+            // Rollback sender's deduction
             await this.updateBankAccount(senderAcct, amount, true);
             console.log("❌ Transfer aborted: Unable to update receiver's balance. Rolled back sender's balance.");
             return;
